@@ -20,6 +20,10 @@ type Generator struct {
 
 	locale string
 	fill   fillMode
+
+	// values maps a FHIR element path (relative to the resource root, e.g.
+	// "name.family") to a caller-supplied value that overrides fake data.
+	values map[string]any
 }
 
 // fillMode controls how optional elements are handled during generation.

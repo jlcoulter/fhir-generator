@@ -32,3 +32,14 @@ func WithFullFillMode() Option {
 		g.fill = fillFull
 	}
 }
+
+// WithValues supplies caller-specified values keyed by FHIR element path
+// (relative to the resource root, e.g. "name.family", "birthDate"). These
+// values override the fake-generated data for matching elements; all other
+// elements are still generated as usual. A value may be a scalar, a
+// map[string]any for an object, or a []any for a repeating element.
+func WithValues(values map[string]any) Option {
+	return func(g *Generator) {
+		g.values = values
+	}
+}

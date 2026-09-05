@@ -445,3 +445,11 @@ func lastSegment(path string) string {
 	}
 	return path
 }
+
+// capitalize uppercases the first rune of s.
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
