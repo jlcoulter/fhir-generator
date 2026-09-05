@@ -51,6 +51,14 @@ org, err := g2.Generate("Organization")
 // Generate for a specific canonical URL.
 auPatient, err := g2.GenerateForURL("http://hl7.org.au/fhir/StructureDefinition/au-patient")
 
+// Override specific fields by FHIR element path (relative to the resource
+// root). Unset fields are still generated with fake data.
+g3 := fhirgen.New(reg, fhirgen.WithValues(map[string]any{
+    "birthDate":   "1990-01-01",
+    "name.family": "Smith",
+}))
+patient, err := g3.Generate("Patient")
+
 b, _ := json.MarshalIndent(patient, "", "  ")
 ```
 
@@ -60,12 +68,15 @@ b, _ := json.MarshalIndent(patient, "", "  ")
 - `WithLocale(string)` — locale for fake data (default `"en"`).
 - `WithMinFillMode()` — only required elements (default).
 - `WithFullFillMode()` — fill all elements, optional ones included.
+- `WithValues(map[string]any)` — override specific fields by FHIR element path
+  (e.g. `"name.family"`, `"birthDate"`); unset fields are still generated.
 
 ## API
 
 - `New(reg *fhir.Registry, opts ...Option) *Generator`
 - `(*Generator) Generate(typeName string) (map[string]any, error)`
 - `(*Generator) GenerateForURL(url string) (map[string]any, error)`
+- `WithValues(map[string]any) Option` — override fields by FHIR element path.
 
 ## Errors
 
