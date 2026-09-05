@@ -111,3 +111,83 @@ func TestGenerateJSONMarshalable(t *testing.T) {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 }
+
+// TestWithID verifies that WithID injects the given id into the generated
+// resource.
+func TestWithID(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42), WithID("momus-setup-patient-1"))
+
+	out, err := g.Generate("Patient")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out["id"] != "momus-setup-patient-1" {
+		t.Errorf("id = %#v, want %q", out["id"], "momus-setup-patient-1")
+	}
+}
+
+// TestWithoutID verifies that a generator without WithID does not inject an id.
+func TestWithoutID(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42))
+
+	out, err := g.Generate("Patient")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if _, ok := out["id"]; ok {
+		t.Errorf("id unexpectedly present: %#v", out["id"])
+	}
+}
+
+// TestWithMetaProfiles verifies that WithMetaProfiles injects a meta.profile
+// array into the generated resource.
+func TestWithMetaProfiles(t *testing.T) {
+	reg := loadTestRegistry(t)
+	profiles := []string{
+		"http://hl7.org.au/fhir/StructureDefinition/au-patient",
+		"http://example.org/StructureDefinition/extra",
+	}
+	g := New(reg, WithSeed(42), WithMetaProfiles(profiles))
+
+	out, err := g.Generate("Patient")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	meta, ok := out["meta"].(map[string]any)
+	if !ok {
+		t.Fatalf("meta = %#v, want map[string]any", out["meta"])
+	}
+	got, ok := meta["profile"].([]any)
+	if !ok {
+		t.Fatalf("meta.profile = %#v, want []any", meta["profile"])
+	}
+	if len(got) != len(profiles) {
+		t.Fatalf("meta.profile length = %d, want %d", len(got), len(profiles))
+	}
+	for i, want := range profiles {
+		if got[i] != want {
+			t.Errorf("meta.profile[%d] = %#v, want %q", i, got[i], want)
+		}
+	}
+}
+
+// TestWithoutMetaProfiles verifies that a generator without WithMetaProfiles
+// does not inject a meta.profile.
+func TestWithoutMetaProfiles(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42))
+
+	out, err := g.Generate("Patient")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	meta, ok := out["meta"].(map[string]any)
+	if !ok {
+		return // no meta at all is fine
+	}
+	if _, ok := meta["profile"]; ok {
+		t.Errorf("meta.profile unexpectedly present: %#v", meta["profile"])
+	}
+}

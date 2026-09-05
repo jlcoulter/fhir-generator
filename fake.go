@@ -16,6 +16,13 @@ func (g *Generator) randN(n int) int {
 	return g.rng.Intn(n)
 }
 
+// randFloat returns a pseudo-random float64 in [0, 1).
+func (g *Generator) randFloat() float64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.rng.Float64()
+}
+
 func (g *Generator) fakeBool() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -58,9 +65,17 @@ func (g *Generator) fakeTime() string {
 
 // fakeStringFor produces a plausible string for an element, using the element's
 // path and binding to synthesize a sensible value where possible.
-func (g *Generator) fakeStringFor(elem *fhir.ElementDefinition) string {
+func (g *Generator) fakeStringFor(elem *fhir.ElementDefinition, tree *fhir.ElementTree) string {
 	seg := lastSegment(elem.Path)
 	lower := strings.ToLower(seg)
+
+	// A configured BindingResolver takes precedence for any element with a
+	// value set binding, so callers can override even well-known codes.
+	if elem.Binding != nil && elem.Binding.ValueSet != "" && g.bindingResolver != nil {
+		if rc, ok := g.bindingResolver.ResolveBinding(elem, tree); ok {
+			return rc.Code
+		}
+	}
 
 	// Coded elements: synthesize a plausible code from the path or binding.
 	if fhir.PrimaryTypeCode(elem) == "code" {
@@ -288,34 +303,49 @@ func (g *Generator) fakeContactPoint() map[string]any {
 	}
 }
 
-func (g *Generator) fakeCoding(elem *fhir.ElementDefinition) map[string]any {
-	system, code := g.fakeBoundCode(elem)
-	return map[string]any{
+func (g *Generator) fakeCoding(elem *fhir.ElementDefinition, tree *fhir.ElementTree) map[string]any {
+	system, code, display := g.fakeBoundCode(elem, tree)
+	if display == "" && g.codingDisplayResolver != nil {
+		if d, ok := g.codingDisplayResolver.ResolveDisplay(system, code); ok {
+			display = d
+		}
+	}
+	coding := map[string]any{
 		"system": system,
 		"code":   code,
 	}
+	if display != "" {
+		coding["display"] = display
+	}
+	return coding
 }
 
-func (g *Generator) fakeCodeableConcept(elem *fhir.ElementDefinition) map[string]any {
+func (g *Generator) fakeCodeableConcept(elem *fhir.ElementDefinition, tree *fhir.ElementTree) map[string]any {
 	return map[string]any{
-		"coding": []any{g.fakeCoding(elem)},
+		"coding": []any{g.fakeCoding(elem, tree)},
 		"text":   g.fakeSentence(),
 	}
 }
 
-// fakeBoundCode returns a plausible (system, code) pair for a coded element,
-// using the element's value set binding when known. For unknown bindings it
-// falls back to the binding's ValueSet URL as the system and a synthesized
-// code.
-func (g *Generator) fakeBoundCode(elem *fhir.ElementDefinition) (string, string) {
+// fakeBoundCode returns a plausible (system, code, display) triple for a coded
+// element, using the element's value set binding when known. It consults the
+// configured BindingResolver first, then falls back to the built-in heuristics.
+// For unknown bindings it falls back to the binding's ValueSet URL as the
+// system and a synthesized code.
+func (g *Generator) fakeBoundCode(elem *fhir.ElementDefinition, tree *fhir.ElementTree) (string, string, string) {
 	if elem.Binding != nil && elem.Binding.ValueSet != "" {
+		if g.bindingResolver != nil {
+			if rc, ok := g.bindingResolver.ResolveBinding(elem, tree); ok {
+				return rc.System, rc.Code, rc.Display
+			}
+		}
 		if sys, code, ok := knownBinding(elem.Binding.ValueSet); ok {
-			return sys, code
+			return sys, code, ""
 		}
 		// Unknown binding: use the ValueSet URL as the system.
-		return elem.Binding.ValueSet, g.fakeStringFor(elem)
+		return elem.Binding.ValueSet, g.fakeStringFor(elem, tree), ""
 	}
-	return "http://example.org/codes", g.fakeStringFor(elem)
+	return "http://example.org/codes", g.fakeStringFor(elem, tree), ""
 }
 
 // knownBinding maps a value set URL to a plausible (system, code) pair for
@@ -351,7 +381,7 @@ func knownBinding(valueSet string) (string, string, bool) {
 	return "", "", false
 }
 
-func (g *Generator) fakeExtension(elem *fhir.ElementDefinition) map[string]any {
+func (g *Generator) fakeExtension(elem *fhir.ElementDefinition, tree *fhir.ElementTree) map[string]any {
 	url := "http://example.org/fhir/StructureDefinition/extension"
 	if len(elem.Types) > 0 && len(elem.Types[0].Profiles) > 0 {
 		url = elem.Types[0].Profiles[0]
@@ -360,7 +390,7 @@ func (g *Generator) fakeExtension(elem *fhir.ElementDefinition) map[string]any {
 	// unknown we still emit a value so the extension is structurally valid.
 	return map[string]any{
 		"url":         url,
-		"valueString": g.fakeStringFor(elem),
+		"valueString": g.fakeStringFor(elem, tree),
 	}
 }
 

@@ -42,7 +42,23 @@ func (g *Generator) generateFromTree(tree *fhir.ElementTree) (map[string]any, er
 		return nil, err
 	}
 	obj["resourceType"] = tree.Root.Path
+	if g.id != "" {
+		obj["id"] = g.id
+	}
+	if len(g.metaProfiles) > 0 {
+		profiles := make([]any, 0, len(g.metaProfiles))
+		for _, p := range g.metaProfiles {
+			profiles = append(profiles, p)
+		}
+		obj["meta"] = map[string]any{"profile": profiles}
+	}
 	g.applyValues(obj, tree)
+	if g.normalizer != nil {
+		g.normalizer(obj)
+	}
+	if g.stripEmptyExtensions {
+		stripEmptyExtensions(obj)
+	}
 	return obj, nil
 }
 
@@ -106,6 +122,29 @@ func (g *Generator) setPath(obj map[string]any, tree *fhir.ElementTree, path str
 		default:
 			return
 		}
+	}
+}
+
+// cloneValue deep-copies a JSON-like value (map[string]any, []any, or scalar)
+// so the result never aliases the source. It is used to emit Fixed/Pattern
+// values without sharing the registry's element-definition data, which callers
+// may mutate.
+func cloneValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[k] = cloneValue(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = cloneValue(val)
+		}
+		return out
+	default:
+		return v
 	}
 }
 
@@ -206,13 +245,15 @@ func (g *Generator) fillChild(child *fhir.ElementDefinition, tree *fhir.ElementT
 
 	key := lastSegment(child.Path)
 
-	// Fixed or pattern values are emitted verbatim.
+	// Fixed or pattern values are emitted verbatim. They are deep-cloned so the
+	// generated output never aliases the registry's shared element definition
+	// data, which callers may mutate (e.g. normalizers that strip display/text).
 	if child.Fixed != nil {
-		out[key] = child.Fixed
+		out[key] = cloneValue(child.Fixed)
 		return nil
 	}
 	if child.Pattern != nil {
-		out[key] = child.Pattern
+		out[key] = cloneValue(child.Pattern)
 		return nil
 	}
 
@@ -261,6 +302,11 @@ func (g *Generator) fillSlices(elem *fhir.ElementDefinition, tree *fhir.ElementT
 			return err
 		}
 		if v != nil {
+			// Overlay the slice's own Fixed/Pattern so the generated value
+			// matches the slice's discriminator.
+			if m, ok := v.(map[string]any); ok {
+				applySlicePattern(m, sl.Definition)
+			}
 			arr = append(arr, v)
 		}
 	}
@@ -270,12 +316,87 @@ func (g *Generator) fillSlices(elem *fhir.ElementDefinition, tree *fhir.ElementT
 	return nil
 }
 
+// applySlicePattern overlays a slice element's Fixed/Pattern value onto a
+// generated map. FHIR slices commonly carry their discriminating values as a
+// pattern/fixed on the slice element itself, so without applying it a generated
+// value does not match the slice.
+func applySlicePattern(value map[string]any, def *fhir.ElementDefinition) {
+	if value == nil || def == nil {
+		return
+	}
+	var overlay any
+	if def.Fixed != nil {
+		overlay = def.Fixed
+	} else if def.Pattern != nil {
+		overlay = def.Pattern
+	} else {
+		return
+	}
+	if m, ok := overlay.(map[string]any); ok {
+		for k, v := range m {
+			if sub, ok := v.(map[string]any); ok {
+				mergeSlicePattern(value, k, sub)
+			} else {
+				value[k] = v
+			}
+		}
+	}
+}
+
+// mergeSlicePattern deep-merges a nested pattern map into the value at the given
+// key, preserving any sibling keys already present.
+func mergeSlicePattern(value map[string]any, key string, sub map[string]any) {
+	existing, ok := value[key].(map[string]any)
+	if !ok {
+		existing = make(map[string]any)
+		value[key] = existing
+	}
+	for k, v := range sub {
+		if nested, ok := v.(map[string]any); ok {
+			mergeSlicePattern(existing, k, nested)
+		} else {
+			existing[k] = v
+		}
+	}
+}
+
 // shouldFill reports whether an element should be generated.
 func (g *Generator) shouldFill(elem *fhir.ElementDefinition) bool {
 	if elem.Min > 0 {
 		return true
 	}
-	return g.fill == fillFull
+	// An optional element that carries a contract signal (fixed/pattern value,
+	// examples, a value set binding, or type profiles) is generated even in
+	// minimal mode, so contract-driven elements are always present.
+	if hasContractSignal(elem) {
+		return true
+	}
+	switch g.fill {
+	case fillFull:
+		return true
+	case fillProbability:
+		return g.randFloat() < g.fillProb
+	default:
+		return false
+	}
+}
+
+// hasContractSignal reports whether an element carries a contract signal that
+// should force its generation even when optional: a fixed or pattern value,
+// example values, a value set binding, or type profiles.
+func hasContractSignal(elem *fhir.ElementDefinition) bool {
+	if elem == nil {
+		return false
+	}
+	if elem.Fixed != nil || elem.Pattern != nil || len(elem.Examples) > 0 || elem.Binding != nil {
+		return true
+	}
+	for _, et := range elem.Types {
+		if len(et.Profiles) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // fillChoice fills a choice ([x]) element by picking one of its allowed types.
@@ -360,7 +481,7 @@ func (g *Generator) fillTypedValue(elem *fhir.ElementDefinition, typeCode string
 	case "":
 		return nil, nil
 	case "string", "markdown", "id", "code", "oid", "uri", "url", "canonical", "uuid", "base64Binary":
-		return g.fakeStringFor(elem), nil
+		return g.fakeStringFor(elem, tree), nil
 	case "boolean":
 		return g.fakeBool(), nil
 	case "integer", "positiveInt", "unsignedInt":
@@ -386,12 +507,12 @@ func (g *Generator) fillTypedValue(elem *fhir.ElementDefinition, typeCode string
 	case "ContactPoint":
 		return g.fakeComplex(elem, tree, depth, g.fakeContactPoint)
 	case "Coding":
-		return g.fakeCoding(elem), nil
+		return g.fakeCoding(elem, tree), nil
 	case "CodeableConcept":
-		return g.fakeCodeableConcept(elem), nil
+		return g.fakeCodeableConcept(elem, tree), nil
 	case "Extension":
 		return g.fakeComplex(elem, tree, depth, func() map[string]any {
-			return g.fakeExtension(elem)
+			return g.fakeExtension(elem, tree)
 		})
 	case "Narrative":
 		return g.fakeNarrative(), nil
@@ -436,4 +557,69 @@ func (g *Generator) fakeComplex(elem *fhir.ElementDefinition, tree *fhir.Element
 		}
 	}
 	return fallback(), nil
+}
+
+// stripEmptyExtensions recursively removes extension and modifierExtension
+// entries that have neither a value[x] nor a nested extension array. Such
+// extensions violate the FHIR ext-1 invariant. It mutates the given object in
+// place.
+func stripEmptyExtensions(obj map[string]any) {
+	for _, key := range []string{"extension", "modifierExtension"} {
+		raw, ok := obj[key]
+		if !ok {
+			continue
+		}
+		arr, ok := raw.([]any)
+		if !ok {
+			continue
+		}
+		kept := arr[:0]
+		for _, item := range arr {
+			ext, ok := item.(map[string]any)
+			if !ok {
+				kept = append(kept, item)
+				continue
+			}
+			if extensionHasValue(ext) {
+				kept = append(kept, item)
+			}
+		}
+		if len(kept) == 0 {
+			delete(obj, key)
+		} else {
+			obj[key] = kept
+		}
+	}
+	// Recurse into remaining children.
+	for _, v := range obj {
+		switch val := v.(type) {
+		case map[string]any:
+			stripEmptyExtensions(val)
+		case []any:
+			for _, item := range val {
+				if m, ok := item.(map[string]any); ok {
+					stripEmptyExtensions(m)
+				}
+			}
+		}
+	}
+}
+
+// extensionHasValue reports whether an extension map carries a value[x] key or
+// a non-empty nested extension array.
+func extensionHasValue(ext map[string]any) bool {
+	for k := range ext {
+		if k == "url" || k == "id" {
+			continue
+		}
+		if k == "extension" || k == "modifierExtension" {
+			if arr, ok := ext[k].([]any); ok && len(arr) > 0 {
+				return true
+			}
+			continue
+		}
+		// Any other key is a value[x] (e.g. valueString, valueCoding).
+		return true
+	}
+	return false
 }
