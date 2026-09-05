@@ -56,7 +56,16 @@ func TestErrorSentinels(t *testing.T) {
 	if ErrUnsupportedType == nil {
 		t.Error("ErrUnsupportedType is nil")
 	}
+	if ErrInvalidPath == nil {
+		t.Error("ErrInvalidPath is nil")
+	}
 	if ErrDefinitionNotFound == ErrUnsupportedType {
+		t.Error("sentinels should be distinct")
+	}
+	if ErrDefinitionNotFound == ErrInvalidPath {
+		t.Error("sentinels should be distinct")
+	}
+	if ErrUnsupportedType == ErrInvalidPath {
 		t.Error("sentinels should be distinct")
 	}
 }

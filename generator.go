@@ -11,6 +11,10 @@ import (
 // structure definitions. It walks the element tree for a resource type and
 // fills in fake data that respects cardinality, choice elements, fixed and
 // pattern values, and value set bindings.
+//
+// A Generator is safe for concurrent use: it guards its random source with an
+// internal mutex. It is configured at construction time via New and the
+// With* options, and is not meant to be mutated afterwards.
 type Generator struct {
 	reg *fhir.Registry
 
@@ -34,7 +38,9 @@ const (
 	fillFull                    // all elements
 )
 
-// New returns a generator backed by the given registry.
+// New returns a generator backed by the given registry. By default the
+// generator uses minimal fill mode (only required elements), a random seed, and
+// the "en" locale; options are applied in order to override any of these.
 func New(reg *fhir.Registry, opts ...Option) *Generator {
 	g := &Generator{
 		reg:    reg,

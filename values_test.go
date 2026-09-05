@@ -1,6 +1,7 @@
 package fhirgen
 
 import (
+	"errors"
 	"testing"
 
 	fhir "github.com/jlcoulter/fhir-registry"
@@ -22,30 +23,31 @@ func TestWithValuesOverridesFakeData(t *testing.T) {
 }
 
 // TestWithValuesNestedPath verifies that a caller-supplied value for a nested
-// element path (e.g. name.family) overrides that field while other fields of
+// element path (e.g. address.city) overrides that field while other fields of
 // the same object are still generated.
 func TestWithValuesNestedPath(t *testing.T) {
 	reg := loadTestRegistry(t)
-	g := New(reg, WithSeed(42), WithValues(map[string]any{"name.family": "Smith"}))
+	g := New(reg, WithSeed(42), WithValues(map[string]any{"address.city": "Sydney"}))
 
 	out, err := g.Generate("Patient")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	names, ok := out["name"].([]any)
-	if !ok || len(names) == 0 {
-		t.Fatalf("name = %#v, want non-empty array", out["name"])
+	addrs, ok := out["address"].([]any)
+	if !ok || len(addrs) == 0 {
+		t.Fatalf("address = %#v, want non-empty array", out["address"])
 	}
-	name, ok := names[0].(map[string]any)
+	addr, ok := addrs[0].(map[string]any)
 	if !ok {
-		t.Fatalf("name[0] = %#v, want map", names[0])
+		t.Fatalf("address[0] = %#v, want map", addrs[0])
 	}
-	if name["family"] != "Smith" {
-		t.Errorf("name.family = %#v, want Smith", name["family"])
+	if addr["city"] != "Sydney" {
+		t.Errorf("address.city = %#v, want Sydney", addr["city"])
 	}
-	// Other fields of the name object should still be generated.
-	if _, ok := name["given"]; !ok {
-		t.Errorf("name.given should still be generated, got %#v", name)
+	// Other fields of the address object should still be generated (country is
+	// fixed "AU" and always present).
+	if addr["country"] != "AU" {
+		t.Errorf("address.country should still be generated, got %#v", addr)
 	}
 }
 
@@ -54,26 +56,26 @@ func TestWithValuesNestedPath(t *testing.T) {
 func TestWithValuesWholeObject(t *testing.T) {
 	reg := loadTestRegistry(t)
 	g := New(reg, WithSeed(42), WithValues(map[string]any{
-		"name": map[string]any{"family": "Smith", "given": []any{"John"}},
+		"address": map[string]any{"city": "Sydney", "state": "NSW"},
 	}))
 
 	out, err := g.Generate("Patient")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	names, ok := out["name"].([]any)
-	if !ok || len(names) == 0 {
-		t.Fatalf("name = %#v, want non-empty array", out["name"])
+	addrs, ok := out["address"].([]any)
+	if !ok || len(addrs) == 0 {
+		t.Fatalf("address = %#v, want non-empty array", out["address"])
 	}
-	name, ok := names[0].(map[string]any)
+	addr, ok := addrs[0].(map[string]any)
 	if !ok {
-		t.Fatalf("name[0] = %#v, want map", names[0])
+		t.Fatalf("address[0] = %#v, want map", addrs[0])
 	}
-	if name["family"] != "Smith" {
-		t.Errorf("name.family = %#v, want Smith", name["family"])
+	if addr["city"] != "Sydney" {
+		t.Errorf("address.city = %#v, want Sydney", addr["city"])
 	}
-	if name["given"].([]any)[0] != "John" {
-		t.Errorf("name.given = %#v, want [John]", name["given"])
+	if addr["state"] != "NSW" {
+		t.Errorf("address.state = %#v, want NSW", addr["state"])
 	}
 }
 
@@ -136,7 +138,7 @@ func TestWithValuesConformance(t *testing.T) {
 	reg := loadTestRegistry(t)
 	g := New(reg, WithSeed(42), WithValues(map[string]any{
 		"birthDate":       "1990-01-01",
-		"name.family":     "Smith",
+		"address.city":    "Sydney",
 		"gender":          "male",
 		"deceasedBoolean": true,
 	}))
@@ -153,5 +155,21 @@ func TestWithValuesConformance(t *testing.T) {
 		if it.Severity == fhir.SeverityViolation {
 			t.Errorf("conformance violation: %+v", it)
 		}
+	}
+}
+
+// TestWithValuesInvalidPath verifies that a WithValues path that does not
+// resolve against the registry returns an error rather than being silently
+// ignored.
+func TestWithValuesInvalidPath(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42), WithValues(map[string]any{"nonexistent": "x"}))
+
+	_, err := g.Generate("Patient")
+	if err == nil {
+		t.Fatal("expected error for invalid WithValues path")
+	}
+	if !errors.Is(err, ErrInvalidPath) {
+		t.Errorf("err = %v, want ErrInvalidPath", err)
 	}
 }

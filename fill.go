@@ -9,8 +9,9 @@ import (
 )
 
 // Generate produces a conformant FHIR resource instance for the given base
-// type name (e.g. "Patient", "Organization"). The result is a map suitable
-// for json.Marshal.
+// type name (e.g. "Patient", "Organization"). The returned map includes the
+// "resourceType" key and is suitable for json.Marshal. If the type name is not
+// defined in the registry, the returned error wraps ErrDefinitionNotFound.
 func (g *Generator) Generate(typeName string) (map[string]any, error) {
 	tree, err := g.reg.TreeForType(typeName)
 	if err != nil {
@@ -20,7 +21,10 @@ func (g *Generator) Generate(typeName string) (map[string]any, error) {
 }
 
 // GenerateForURL produces a conformant FHIR resource instance for a specific
-// StructureDefinition canonical URL.
+// StructureDefinition canonical URL (e.g. an AU profile). Unlike Generate,
+// which takes a base type name, GenerateForURL honors the full profile
+// referenced by the URL. If the URL is not defined, the returned error wraps
+// ErrDefinitionNotFound.
 func (g *Generator) GenerateForURL(url string) (map[string]any, error) {
 	tree, err := g.reg.Tree(url)
 	if err != nil {
@@ -30,6 +34,9 @@ func (g *Generator) GenerateForURL(url string) (map[string]any, error) {
 }
 
 func (g *Generator) generateFromTree(tree *fhir.ElementTree) (map[string]any, error) {
+	if err := g.validateValues(tree); err != nil {
+		return nil, err
+	}
 	obj, err := g.fillObject(tree.Root, tree)
 	if err != nil {
 		return nil, err
@@ -37,6 +44,18 @@ func (g *Generator) generateFromTree(tree *fhir.ElementTree) (map[string]any, er
 	obj["resourceType"] = tree.Root.Path
 	g.applyValues(obj, tree)
 	return obj, nil
+}
+
+// validateValues verifies that every WithValues path resolves against the
+// element tree, so a typo fails fast rather than silently producing a resource
+// missing the intended data.
+func (g *Generator) validateValues(tree *fhir.ElementTree) error {
+	for path := range g.values {
+		if _, err := tree.LookupPath(path); err != nil {
+			return fmt.Errorf("%w: %s", ErrInvalidPath, path)
+		}
+	}
+	return nil
 }
 
 // applyValues injects caller-supplied values (from WithValues) into the

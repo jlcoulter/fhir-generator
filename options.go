@@ -1,6 +1,7 @@
 package fhirgen
 
-// Option configures a Generator.
+// Option configures a Generator. Options are applied in the order they are
+// passed to New, and later options override earlier ones.
 type Option func(*Generator)
 
 // WithSeed sets the random seed for deterministic output. Two generators with
@@ -37,7 +38,12 @@ func WithFullFillMode() Option {
 // (relative to the resource root, e.g. "name.family", "birthDate"). These
 // values override the fake-generated data for matching elements; all other
 // elements are still generated as usual. A value may be a scalar, a
-// map[string]any for an object, or a []any for a repeating element.
+// map[string]any for an object, or a []any for a repeating element; a non-slice
+// value for a repeating element is wrapped in an array automatically.
+//
+// Paths are validated eagerly on each Generate or GenerateForURL call against
+// the registry's element tree, so an unknown path returns ErrInvalidPath rather
+// than silently producing a resource missing the intended data.
 func WithValues(values map[string]any) Option {
 	return func(g *Generator) {
 		g.values = values
