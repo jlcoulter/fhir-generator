@@ -42,9 +42,9 @@ type Generator struct {
 	// codingDisplayResolver, when non-nil, resolves coding displays.
 	codingDisplayResolver CodingDisplayResolver
 
-	// normalizer, when non-nil, is applied to the generated resource after
+	// normaliser, when non-nil, is applied to the generated resource after
 	// filling and value injection, mutating it in place.
-	normalizer func(map[string]any)
+	normaliser func(map[string]any)
 
 	// stripEmptyExtensions, when true, removes extension/modifierExtension
 	// entries with neither a value[x] nor a nested extension array (ext-1).

@@ -176,12 +176,12 @@ func TestCodingDisplayResolver(t *testing.T) {
 	}
 }
 
-// TestNormalizer verifies that WithNormalizer is applied to the generated
+// TestNormaliser verifies that WithNormaliser is applied to the generated
 // resource after filling, mutating it in place.
-func TestNormalizer(t *testing.T) {
+func TestNormaliser(t *testing.T) {
 	reg := loadTestRegistry(t)
 	called := false
-	g := New(reg, WithSeed(42), WithNormalizer(func(body map[string]any) {
+	g := New(reg, WithSeed(42), WithNormaliser(func(body map[string]any) {
 		called = true
 		body["normalized"] = true
 	}))
@@ -191,7 +191,7 @@ func TestNormalizer(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 	if !called {
-		t.Fatal("normalizer was not called")
+		t.Fatal("normaliser was not called")
 	}
 	if out["normalized"] != true {
 		t.Errorf("normalized = %#v, want true", out["normalized"])
@@ -202,8 +202,8 @@ func TestNormalizer(t *testing.T) {
 // extension entries that have neither a value[x] nor a nested extension array.
 func TestStripEmptyExtensions(t *testing.T) {
 	reg := loadTestRegistry(t)
-	// Inject an empty extension via the normalizer, then verify it is stripped.
-	g := New(reg, WithSeed(42), WithStripEmptyExtensions(), WithNormalizer(func(body map[string]any) {
+	// Inject an empty extension via the normaliser, then verify it is stripped.
+	g := New(reg, WithSeed(42), WithStripEmptyExtensions(), WithNormaliser(func(body map[string]any) {
 		body["extension"] = []any{
 			map[string]any{"url": "http://example.org/empty"},                  // no value, no sub-extensions
 			map[string]any{"url": "http://example.org/ok", "valueString": "x"}, // has value
@@ -234,7 +234,7 @@ func TestStripEmptyExtensions(t *testing.T) {
 // WithStripEmptyExtensions is not set.
 func TestWithoutStripEmptyExtensions(t *testing.T) {
 	reg := loadTestRegistry(t)
-	g := New(reg, WithSeed(42), WithNormalizer(func(body map[string]any) {
+	g := New(reg, WithSeed(42), WithNormaliser(func(body map[string]any) {
 		body["extension"] = []any{
 			map[string]any{"url": "http://example.org/empty"},
 		}

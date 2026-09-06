@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 
 // TestGeneratePatient verifies that generating a Patient produces a
 // conformant resource: it has a resourceType, and passes the registry's own
-// Marshal normalizer without cardinality violations.
+// Marshal normaliser without cardinality violations.
 func TestGeneratePatient(t *testing.T) {
 	reg := loadTestRegistry(t)
 	g := New(reg, WithSeed(42))

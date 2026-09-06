@@ -10,7 +10,7 @@ pattern values, value set bindings, and type resolution.
 ## Features
 
 - **Conformant output** — generated resources pass the registry's own
-  `Marshal` normalizer without cardinality violations.
+  `Marshal` normaliser without cardinality violations.
 - **Cardinality-aware** — required (`min > 0`) elements are always filled;
   repeating (`max > 1`) elements become arrays; choice (`[x]`) elements use
   their concrete type-suffixed key.
