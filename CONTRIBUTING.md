@@ -33,5 +33,19 @@ go test ./...
 ## Pull requests
 
 - Keep changes focused and reviewable; prefer small, stacked PRs.
-- Ensure `go test ./...` passes.
+- Ensure `go test ./...`, `go vet ./...`, and `gofmt -l .` pass.
 - Write clear commit messages that describe the behavior change.
+
+## CI
+
+This project uses GitHub Actions for continuous integration. Every push and
+pull request runs:
+
+- `go build ./...`
+- `go vet ./...`
+- `go test ./...` with a coverage gate (80%)
+- `gofmt -l .` (format check)
+
+Releases are automated via Release Please. When a PR is merged with a
+conventional-commit message, Release Please opens a release PR. Merging that
+PR triggers a tagged release with an auto-generated changelog from git-cliff.
