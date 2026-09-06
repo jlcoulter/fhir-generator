@@ -1,6 +1,7 @@
 package fhirgen
 
 import (
+	"strings"
 	"testing"
 
 	fhir "github.com/jlcoulter/fhir-registry"
@@ -192,5 +193,119 @@ func TestExtensionsSatisfyExt1(t *testing.T) {
 			}
 		}
 		walk(out, typ)
+	}
+}
+
+// TestNoContainedAbstractResourceType verifies that generated resources never
+// contain a "contained" entry with resourceType "Resource" or other abstract
+// types. FHIR servers reject these (HAPI-1684).
+func TestNoContainedAbstractResourceType(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42), WithFullFillMode())
+
+	for _, typ := range []string{"Patient", "Organization", "Practitioner", "Observation", "Location", "HealthcareService", "PractitionerRole"} {
+		out, err := g.Generate(typ)
+		if err != nil {
+			t.Fatalf("Generate(%s): %v", typ, err)
+		}
+		contained, ok := out["contained"].([]any)
+		if !ok {
+			continue
+		}
+		for i, item := range contained {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			rt, _ := m["resourceType"].(string)
+			switch rt {
+			case "Resource", "DomainResource":
+				t.Errorf("%s: contained[%d] has abstract resourceType %q", typ, i, rt)
+			}
+		}
+	}
+}
+
+// TestFakeReferenceNoAbstractResourceType verifies that generated references
+// never produce "Resource" as the resource type when no target profile is
+// available. "Resource" is an abstract base type.
+func TestFakeReferenceNoAbstractResourceType(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42), WithFullFillMode())
+
+	for _, typ := range []string{"Patient", "Organization", "Practitioner", "Observation", "Location", "HealthcareService"} {
+		out, err := g.Generate(typ)
+		if err != nil {
+			t.Fatalf("Generate(%s): %v", typ, err)
+		}
+		var walk func(v any)
+		walk = func(v any) {
+			switch val := v.(type) {
+			case map[string]any:
+				if ref, ok := val["reference"].(string); ok && ref != "" {
+					parts := strings.SplitN(ref, "/", 2)
+					if len(parts) == 2 {
+						rt := parts[0]
+						if rt == "Resource" || rt == "DomainResource" {
+							t.Errorf("%s: reference has abstract resourceType in %q", typ, ref)
+						}
+					}
+				}
+				for _, child := range val {
+					walk(child)
+				}
+			case []any:
+				for _, item := range val {
+					walk(item)
+				}
+			}
+		}
+		walk(out)
+	}
+}
+
+// TestEnforceExt1StripsValueFromComplexExtension verifies that when a
+// generated extension has both sub-extensions and a value[x], the value[x]
+// is removed (enforcing ext-1).
+func TestEnforceExt1StripsValueFromComplexExtension(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42), WithFullFillMode())
+
+	for _, typ := range []string{"Patient", "Organization", "Practitioner", "Observation"} {
+		out, err := g.Generate(typ)
+		if err != nil {
+			t.Fatalf("Generate(%s): %v", typ, err)
+		}
+		var walk func(v any)
+		walk = func(v any) {
+			switch val := v.(type) {
+			case map[string]any:
+				if url, ok := val["url"].(string); ok && url != "" {
+					hasNested := false
+					for k, cv := range val {
+						if k == "extension" || k == "modifierExtension" {
+							if arr, ok := cv.([]any); ok && len(arr) > 0 {
+								hasNested = true
+							}
+						}
+					}
+					if hasNested {
+						for k := range val {
+							if k != "url" && k != "id" && k != "extension" && k != "modifierExtension" {
+								t.Errorf("%s: complex extension %s still has value[x] %s after enforceExt1", typ, url, k)
+							}
+						}
+					}
+				}
+				for _, child := range val {
+					walk(child)
+				}
+			case []any:
+				for _, item := range val {
+					walk(item)
+				}
+			}
+		}
+		walk(out)
 	}
 }

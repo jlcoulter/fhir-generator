@@ -59,6 +59,7 @@ func (g *Generator) generateFromTree(tree *fhir.ElementTree) (map[string]any, er
 	if g.stripEmptyExtensions {
 		stripEmptyExtensions(obj)
 	}
+	enforceExt1(obj)
 	return obj, nil
 }
 
@@ -497,7 +498,11 @@ func (g *Generator) fillTypedValue(elem *fhir.ElementDefinition, typeCode string
 	case "Reference":
 		return g.fakeReference(elem), nil
 	case "Resource":
-		return map[string]any{"resourceType": "Resource", "id": g.fakeID()}, nil
+		// "Resource" is an abstract base type that cannot be instantiated
+		// in FHIR. Contained resources with resourceType "Resource" are
+		// rejected by servers (HAPI-1684). Skip rather than emit an
+		// invalid payload.
+		return nil, nil
 	case "HumanName":
 		return g.fakeComplex(elem, tree, depth, g.fakeHumanName)
 	case "Address":
@@ -622,4 +627,66 @@ func extensionHasValue(ext map[string]any) bool {
 		return true
 	}
 	return false
+}
+
+// enforceExt1 removes value[x] keys from extensions that carry non-empty
+// sub-extensions. FHIR's ext-1 invariant requires that an Extension has
+// either a value (value[x]) or contained extensions, but never both.
+func enforceExt1(obj map[string]any) {
+	for _, key := range []string{"extension", "modifierExtension"} {
+		raw, ok := obj[key]
+		if !ok {
+			continue
+		}
+		arr, ok := raw.([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range arr {
+			ext, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			// If this extension has non-empty sub-extensions, drop any value[x].
+			if hasNonEmptyExtensions(ext) {
+				removeValueKeys(ext)
+			}
+			enforceExt1(ext)
+		}
+	}
+	// Recurse into remaining children.
+	for _, v := range obj {
+		switch val := v.(type) {
+		case map[string]any:
+			enforceExt1(val)
+		case []any:
+			for _, item := range val {
+				if m, ok := item.(map[string]any); ok {
+					enforceExt1(m)
+				}
+			}
+		}
+	}
+}
+
+// hasNonEmptyExtensions returns true if the map has a non-empty "extension"
+// or "modifierExtension" array.
+func hasNonEmptyExtensions(m map[string]any) bool {
+	for _, key := range []string{"extension", "modifierExtension"} {
+		if arr, ok := m[key].([]any); ok && len(arr) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// removeValueKeys deletes any key that is a value[x] (i.e. not "url", "id",
+// "extension", or "modifierExtension") from the map.
+func removeValueKeys(m map[string]any) {
+	for k := range m {
+		if k == "url" || k == "id" || k == "extension" || k == "modifierExtension" {
+			continue
+		}
+		delete(m, k)
+	}
 }

@@ -248,9 +248,12 @@ func synthesizeCode(seg string) (string, bool) {
 func (g *Generator) fakeReference(elem *fhir.ElementDefinition) map[string]any {
 	// Derive the resource type from the target profile URL (last path
 	// segment, version stripped), producing a realistic "ResourceType/id".
-	resourceType := "Resource"
+	resourceType := "Organization"
 	if len(elem.Types) > 0 && len(elem.Types[0].TargetProfile) > 0 {
-		resourceType = resourceTypeFromURL(elem.Types[0].TargetProfile[0])
+		rt := resourceTypeFromURL(elem.Types[0].TargetProfile[0])
+		if rt != "Resource" && rt != "DomainResource" {
+			resourceType = rt
+		}
 	}
 	return map[string]any{
 		"reference": resourceType + "/" + g.fakeID(),
