@@ -292,9 +292,19 @@ func (g *Generator) fakeAddress() map[string]any {
 }
 
 func (g *Generator) fakeIdentifier() map[string]any {
-	return map[string]any{
-		"system": "urn:oid:1.2.3.4.5",
-		"value":  g.fakeID(),
+	switch g.randN(6) {
+	case 0:
+		return map[string]any{"system": SystemABN, "value": g.fakeABN()}
+	case 1:
+		return map[string]any{"system": SystemACN, "value": g.fakeACN()}
+	case 2:
+		return map[string]any{"system": SystemHPII, "value": g.fakeHPII()}
+	case 3:
+		return map[string]any{"system": SystemHPIO, "value": g.fakeHPIO()}
+	case 4:
+		return map[string]any{"system": SystemAHPRA, "value": g.fakeAHPRA()}
+	default:
+		return map[string]any{"system": "urn:oid:1.2.3.4.5", "value": g.fakeID()}
 	}
 }
 

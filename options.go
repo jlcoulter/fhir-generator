@@ -79,14 +79,14 @@ func WithCodingDisplayResolver(r CodingDisplayResolver) Option {
 	}
 }
 
-// WithNormalizer sets a function applied to the generated resource after
+// Withnormaliser sets a function applied to the generated resource after
 // filling and value injection, mutating it in place. It is the extension point
 // for domain-specific post-processing (e.g. normalizing identifiers, resolving
 // displays, resource-specific patches). When nil (the default), no
 // post-processing is applied.
-func WithNormalizer(n func(map[string]any)) Option {
+func WithNormaliser(n func(map[string]any)) Option {
 	return func(g *Generator) {
-		g.normalizer = n
+		g.normaliser = n
 	}
 }
 

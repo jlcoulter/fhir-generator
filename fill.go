@@ -53,8 +53,9 @@ func (g *Generator) generateFromTree(tree *fhir.ElementTree) (map[string]any, er
 		obj["meta"] = map[string]any{"profile": profiles}
 	}
 	g.applyValues(obj, tree)
-	if g.normalizer != nil {
-		g.normalizer(obj)
+	g.normaliseIdentifiers(obj)
+	if g.normaliser != nil {
+		g.normaliser(obj)
 	}
 	if g.stripEmptyExtensions {
 		stripEmptyExtensions(obj)
@@ -248,7 +249,7 @@ func (g *Generator) fillChild(child *fhir.ElementDefinition, tree *fhir.ElementT
 
 	// Fixed or pattern values are emitted verbatim. They are deep-cloned so the
 	// generated output never aliases the registry's shared element definition
-	// data, which callers may mutate (e.g. normalizers that strip display/text).
+	// data, which callers may mutate (e.g. normalisers that strip display/text).
 	if child.Fixed != nil {
 		out[key] = cloneValue(child.Fixed)
 		return nil
