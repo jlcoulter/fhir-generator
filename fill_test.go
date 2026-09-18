@@ -309,3 +309,69 @@ func TestEnforceExt1StripsValueFromComplexExtension(t *testing.T) {
 		walk(out)
 	}
 }
+
+// TestSliceChildPatternFixesNestedCoding verifies that a slice whose child
+// value[x].coding fixes a code applies that fixed value, preserving the array
+// shape of the repeating "coding" element.
+func TestSliceChildPatternFixesNestedCoding(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42))
+	_ = g
+
+	codeFixed := map[string]any{"system": "http://cs", "code": "organisation-initiated"}
+	vx := &fhir.ElementDefinition{
+		ID:    "X.extension.extension:sub.value[x]",
+		Path:  "X.extension.extension.value[x]",
+		Types: []fhir.ElementType{{Code: "CodeableConcept"}},
+		Children: []*fhir.ElementDefinition{
+			{ID: "X.extension.extension:sub.value[x].coding", Path: "X.extension.extension.value[x].coding", Fixed: codeFixed},
+		},
+	}
+	subSlice := &fhir.ElementDefinition{
+		ID:        "X.extension.extension:sub",
+		Path:      "X.extension.extension",
+		SliceName: "suppressedBy",
+		Children: []*fhir.ElementDefinition{
+			{ID: "X.extension.extension:sub.url", Path: "X.extension.extension.url", Fixed: "suppressedBy"},
+			vx,
+		},
+	}
+	extChild := &fhir.ElementDefinition{
+		ID:     "X.extension.extension",
+		Path:   "X.extension.extension",
+		Types:  []fhir.ElementType{{Code: "Extension"}},
+		Slices: []*fhir.SliceGroup{{Name: "suppressedBy", Definition: subSlice}},
+	}
+	slice := &fhir.ElementDefinition{
+		ID:        "X.extension:suppressed",
+		Path:      "X.extension",
+		SliceName: "suppressed",
+		Types:     []fhir.ElementType{{Code: "Extension"}},
+		Children: []*fhir.ElementDefinition{
+			{ID: "X.extension:suppressed.url", Path: "X.extension.url", Fixed: "http://ext/suppressed"},
+			extChild,
+		},
+	}
+
+	value := map[string]any{
+		"url": "http://ext/suppressed",
+		"extension": []any{
+			map[string]any{"url": "suppressedBy", "valueCodeableConcept": map[string]any{
+				"coding": []any{map[string]any{"code": "practitioner-initiated", "system": "http://cs"}},
+			}},
+		},
+	}
+	applySliceChildPatterns(value, slice)
+
+	exts := value["extension"].([]any)
+	m := exts[0].(map[string]any)
+	vcc := m["valueCodeableConcept"].(map[string]any)
+	codings, ok := vcc["coding"].([]any)
+	if !ok || len(codings) == 0 {
+		t.Fatalf("coding should be an array, got %T", vcc["coding"])
+	}
+	first := codings[0].(map[string]any)
+	if first["code"] != "organisation-initiated" {
+		t.Errorf("coding code = %v, want organisation-initiated", first["code"])
+	}
+}

@@ -308,6 +308,9 @@ func (g *Generator) fillSlices(elem *fhir.ElementDefinition, tree *fhir.ElementT
 			// matches the slice's discriminator.
 			if m, ok := v.(map[string]any); ok {
 				applySlicePattern(m, sl.Definition)
+				// Apply child Fixed/Pattern values too (e.g. a complex extension
+				// slice whose value[x].coding fixes a code, carried a level down).
+				applySliceChildPatterns(m, sl.Definition)
 			}
 			arr = append(arr, v)
 		}
@@ -343,6 +346,183 @@ func applySlicePattern(value map[string]any, def *fhir.ElementDefinition) {
 			}
 		}
 	}
+}
+
+// applySliceChildPatterns applies each of the slice's children's Fixed/Pattern
+// values onto the generated map, recursing into nested slices. A child that
+// itself is sliced (e.g. a complex extension's nested "extension") is handled
+// by matching each generated array element to its slice via the fixed "url".
+func applySliceChildPatterns(value map[string]any, def *fhir.ElementDefinition) {
+	if value == nil || def == nil {
+		return
+	}
+	for _, child := range def.Children {
+		if child != nil {
+			applySliceChildPattern(value, child)
+		}
+	}
+	for _, sl := range def.Slices {
+		if sl != nil && sl.Definition != nil {
+			applySliceChildPattern(value, sl.Definition)
+		}
+	}
+}
+
+// applySliceChildPattern applies one child's Fixed/Pattern onto the value at the
+// child's JSON key, recursing into the child's own slices or its children when it
+// has no direct Fixed/Pattern of its own.
+func applySliceChildPattern(value map[string]any, child *fhir.ElementDefinition) {
+	if value == nil || child == nil {
+		return
+	}
+	key := childJSONKey(child)
+	var overlay any
+	switch {
+	case child.Fixed != nil:
+		overlay = child.Fixed
+	case child.Pattern != nil:
+		overlay = child.Pattern
+	default:
+		if len(child.Slices) > 0 {
+			applyNestedChildPatterns(value, child, key)
+			return
+		}
+		// No direct fixed/pattern or slices: recurse into the child's own
+		// children (e.g. value[x].coding fixing a code) at the generated value.
+		raw, ok := value[key]
+		if !ok {
+			return
+		}
+		switch t := raw.(type) {
+		case map[string]any:
+			applySliceChildPatterns(t, child)
+		case []any:
+			for _, item := range t {
+				if m, ok := item.(map[string]any); ok {
+					applySliceChildPatterns(m, child)
+				}
+			}
+		}
+		return
+	}
+	if m, ok := overlay.(map[string]any); ok {
+		// If the target value is already an array (e.g. a CodeableConcept's
+		// repeating "coding" element), preserve the array shape by wrapping the
+		// fixed/pattern value in a single-element array rather than replacing it
+		// with a bare object.
+		if _, isArr := value[key].([]any); isArr {
+			value[key] = []any{cloneValue(m)}
+			return
+		}
+		mergeSlicePattern(value, key, m)
+	} else {
+		value[key] = overlay
+	}
+}
+
+// applyNestedChildPatterns descends into a child that carries no direct
+// Fixed/Pattern but has nested slices (e.g. a complex extension's nested
+// "extension" array), applying each matching slice's constraints onto the
+// corresponding generated array element.
+func applyNestedChildPatterns(value map[string]any, child *fhir.ElementDefinition, key string) {
+	if len(child.Slices) == 0 {
+		return
+	}
+	raw, ok := value[key]
+	if !ok {
+		return
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return
+	}
+	for _, sl := range child.Slices {
+		if sl == nil || sl.Definition == nil {
+			continue
+		}
+		url := fixedSliceURL(sl.Definition)
+		if url == "" {
+			continue
+		}
+		for _, item := range arr {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			if u, _ := m["url"].(string); u != url {
+				continue
+			}
+			applySlicePattern(m, sl.Definition)
+			applySliceChildPatterns(m, sl.Definition)
+		}
+	}
+}
+
+// fixedSliceURL returns the fixed "url" value of a slice element, the
+// discriminator matching a generated extension array element to its slice.
+func fixedSliceURL(sl *fhir.ElementDefinition) string {
+	if sl == nil {
+		return ""
+	}
+	for _, child := range sl.Children {
+		if child == nil || lastSegment(child.Path) != "url" {
+			continue
+		}
+		if u, ok := child.Fixed.(string); ok && u != "" {
+			return u
+		}
+	}
+	return ""
+}
+
+// childJSONKey returns the JSON object key for a child element, mapping a choice
+// element (path "value[x]") to its concrete suffixed key (e.g. "valueCodeableConcept")
+// when a single concrete type is fixed by a Fixed/Pattern value.
+func childJSONKey(child *fhir.ElementDefinition) string {
+	key := lastSegment(child.Path)
+	if !strings.HasSuffix(key, "[x]") {
+		return key
+	}
+	base := strings.TrimSuffix(key, "[x]")
+	// Determine the concrete type: from the Fixed/Pattern value when present,
+	// otherwise from the first type.
+	var ty string
+	switch {
+	case child.Fixed != nil:
+		ty = fhirTypeOfValue(child.Fixed)
+	case child.Pattern != nil:
+		ty = fhirTypeOfValue(child.Pattern)
+	}
+	if ty != "" {
+		return base + capitalize(ty)
+	}
+	if len(child.Types) > 0 {
+		return base + capitalize(child.Types[0].Code)
+	}
+	return base
+}
+
+// fhirTypeOfValue returns the FHIR complex type code implied by a Fixed/Pattern
+// value's JSON shape (e.g. a map with "coding" → "CodeableConcept"; a map with
+// "system" → "Coding").
+func fhirTypeOfValue(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if _, has := m["coding"]; has {
+		return "CodeableConcept"
+	}
+	if _, has := m["system"]; has {
+		return "Coding"
+	}
+	if _, has := m["period"]; has {
+		return "Period"
+	}
+	if _, has := m["reference"]; has {
+		return "Reference"
+	}
+	return ""
 }
 
 // mergeSlicePattern deep-merges a nested pattern map into the value at the given
