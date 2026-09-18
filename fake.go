@@ -375,7 +375,7 @@ func knownBinding(valueSet string) (string, string, bool) {
 	case strings.Contains(valueSet, "administrative-gender"):
 		return "http://hl7.org/fhir/administrative-gender", "male", true
 	case strings.Contains(valueSet, "address-use"):
-		return "http://hl7.org/fhir/address-use", "home", true
+		return "http://hl7.org/fhir/address-use", "work", true
 	case strings.Contains(valueSet, "address-type"):
 		return "http://hl7.org/fhir/address-type", "physical", true
 	case strings.Contains(valueSet, "identifier-use"):
@@ -385,7 +385,9 @@ func knownBinding(valueSet string) (string, string, bool) {
 	case strings.Contains(valueSet, "contact-point-system"):
 		return "http://hl7.org/fhir/contact-point-system", "phone", true
 	case strings.Contains(valueSet, "contact-point-use"):
-		return "http://hl7.org/fhir/contact-point-use", "home", true
+		// 'home' is forbidden on Organization telecom/address (org-3/org-2);
+		// 'work' is in the value set and universally valid.
+		return "http://hl7.org/fhir/contact-point-use", "work", true
 	case strings.Contains(valueSet, "name-use"):
 		return "http://hl7.org/fhir/name-use", "official", true
 	case strings.Contains(valueSet, "languages"):

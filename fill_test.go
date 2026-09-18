@@ -493,6 +493,12 @@ func TestFakeUseIsNeverHome(t *testing.T) {
 	if c, ok := synthesizeCode("use"); !ok || c == "home" {
 		t.Fatalf("synthesizeCode(use) = %q, ok=%v; want non-home", c, ok)
 	}
+	if _, c, ok := knownBinding("http://hl7.org/fhir/ValueSet/contact-point-use"); !ok || c == "home" {
+		t.Fatalf("knownBinding(contact-point-use) = %q, ok=%v; want non-home", c, ok)
+	}
+	if _, c, ok := knownBinding("http://hl7.org/fhir/ValueSet/address-use"); !ok || c == "home" {
+		t.Fatalf("knownBinding(address-use) = %q, ok=%v; want non-home", c, ok)
+	}
 }
 
 // TestFillSlicesRespectsParentMax verifies that a sliced element whose own Max
