@@ -406,45 +406,18 @@ func applySliceChildPattern(value map[string]any, child *fhir.ElementDefinition)
 		return
 	}
 	if m, ok := overlay.(map[string]any); ok {
-		// A Fixed/Pattern value is emitted verbatim with only the fields it
-		// defines. A fixed Coding carries system+code and must not gain display
-		// or text (servers reject a display/text on a fixed value that defines
-		// only system+code).
-		m = stripFixedDisplayText(m)
 		// If the target value is already an array (e.g. a CodeableConcept's
 		// repeating "coding" element), preserve the array shape by wrapping the
 		// fixed/pattern value in a single-element array rather than replacing it
 		// with a bare object.
 		if _, isArr := value[key].([]any); isArr {
 			value[key] = []any{cloneValue(m)}
-			// The parent CodeableConcept's text (added by fakeCodeableConcept) is
-			// stale when its coding is fixed; drop it.
-			delete(value, "text")
 			return
 		}
 		mergeSlicePattern(value, key, m)
 	} else {
 		value[key] = overlay
 	}
-}
-
-// stripFixedDisplayText removes display/text from a fixed/pattern coding map when
-// the fixed value defines only system+code. A CodeableConcept whose coding is
-// fixed by the profile may not carry extra display or text.
-func stripFixedDisplayText(m map[string]any) map[string]any {
-	// Coding: drop display, drop any top-level text.
-	delete(m, "display")
-	delete(m, "text")
-	// CodeableConcept: drop its text and each coding's display.
-	if codings, ok := m["coding"].([]any); ok {
-		for _, c := range codings {
-			if cm, ok := c.(map[string]any); ok {
-				delete(cm, "display")
-			}
-		}
-		delete(m, "text")
-	}
-	return m
 }
 
 // applyNestedChildPatterns descends into a child that carries no direct
