@@ -461,6 +461,40 @@ func TestFixedCodingMarkedAndStripped(t *testing.T) {
 	}
 }
 
+// TestFakePeriodOrdered verifies that a generated Period always has start < end
+// (satisfying the per-1/base period invariants), across many seeds.
+func TestFakePeriodOrdered(t *testing.T) {
+	reg := loadTestRegistry(t)
+	for seed := int64(0); seed < 50; seed++ {
+		g := New(reg, WithSeed(seed), WithFullFillMode())
+		period := g.fakePeriod()
+		start := period["start"].(string)
+		end := period["end"].(string)
+		if start >= end {
+			t.Fatalf("seed %d: period start %q not before end %q", seed, start, end)
+		}
+	}
+}
+
+// TestFakeUseIsNeverHome verifies generated ContactPoint/Address/synthesized
+// "use" values are never 'home', so Organization telecom/address satisfy
+// org-3/org-2.
+func TestFakeUseIsNeverHome(t *testing.T) {
+	reg := loadTestRegistry(t)
+	g := New(reg, WithSeed(42), WithFullFillMode())
+	for i := 0; i < 50; i++ {
+		if g.fakeContactPoint()["use"] == "home" {
+			t.Fatal("fakeContactPoint use must not be home")
+		}
+		if g.fakeAddress()["use"] == "home" {
+			t.Fatal("fakeAddress use must not be home")
+		}
+	}
+	if c, ok := synthesizeCode("use"); !ok || c == "home" {
+		t.Fatalf("synthesizeCode(use) = %q, ok=%v; want non-home", c, ok)
+	}
+}
+
 // TestFillSlicesRespectsParentMax verifies that a sliced element whose own Max
 // is bounded emits at most Max slice instances, preferring required slices.
 func TestFillSlicesRespectsParentMax(t *testing.T) {

@@ -208,7 +208,9 @@ func (g *Generator) fakeGender() string {
 func synthesizeCode(seg string) (string, bool) {
 	switch seg {
 	case "use":
-		return "home", true
+		// org-3/org-2 forbid 'home' on Organization telecom/address; 'work' is
+		// universally valid and never conflicts with a profile pattern.
+		return "work", true
 	case "status":
 		return "active", true
 	case "gender":
@@ -282,7 +284,7 @@ func (g *Generator) fakeHumanName() map[string]any {
 
 func (g *Generator) fakeAddress() map[string]any {
 	return map[string]any{
-		"use":        "home",
+		"use":        "work",
 		"line":       []any{"123 Main St"},
 		"city":       "Springfield",
 		"state":      "NSW",
@@ -312,7 +314,7 @@ func (g *Generator) fakeContactPoint() map[string]any {
 	return map[string]any{
 		"system": "phone",
 		"value":  g.fakePhone(),
-		"use":    "home",
+		"use":    "work",
 	}
 }
 
@@ -433,9 +435,16 @@ func (g *Generator) fakeQuantity() map[string]any {
 }
 
 func (g *Generator) fakePeriod() map[string]any {
+	// Per-1/period invariants require start < end; draw the start date then add
+	// a positive offset so the interval is always ordered.
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	startDays := g.rng.Intn(20*365 + 1)
+	endDays := startDays + 1 + g.rng.Intn(5*365)
 	return map[string]any{
-		"start": g.fakeDateTime(),
-		"end":   g.fakeDateTime(),
+		"start": start.AddDate(0, 0, startDays).Format(time.RFC3339),
+		"end":   start.AddDate(0, 0, endDays).Format(time.RFC3339),
 	}
 }
 
