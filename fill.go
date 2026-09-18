@@ -293,6 +293,13 @@ func (g *Generator) fillObjectDepth(elem *fhir.ElementDefinition, tree *fhir.Ele
 
 // fillChild fills a single child element into the output object.
 func (g *Generator) fillChild(child *fhir.ElementDefinition, tree *fhir.ElementTree, out map[string]any, depth int) error {
+	// An element with Max 0 can never be present (e.g. the value[x] of a complex
+	// extension like au-receivingfacility). This must short-circuit every path,
+	// including the choice dispatch below, or a random choice value is emitted
+	// ("max allowed = 0, but found 1").
+	if child.Max == 0 {
+		return nil
+	}
 	// Choice elements: pick one concrete type and use its suffixed key.
 	if fhir.IsChoice(child) {
 		return g.fillChoice(child, tree, out, depth)
