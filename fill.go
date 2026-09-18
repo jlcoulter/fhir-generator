@@ -562,6 +562,17 @@ func (g *Generator) fakeComplex(elem *fhir.ElementDefinition, tree *fhir.Element
 			return g.fillObjectDepth(t.Root, t, depth+1)
 		}
 	}
+	// An element without a profile hint may still carry its own resolved
+	// children (e.g. a sliced Extension whose sub-extension slices define url
+	// and value[x] directly, like the HCPD deactivatedBy/suppressedBy slices).
+	// Filling from those children produces a conformant structure; falling back
+	// to the hardcoded fake here would emit a generic placeholder extension.
+	if len(elem.Children) > 0 {
+		if t, ok := g.reg.ResolveType(fhir.PrimaryTypeCode(elem), nil); ok {
+			return g.fillObjectDepth(elem, t, depth+1)
+		}
+		return g.fillObjectDepth(elem, tree, depth+1)
+	}
 	return fallback(), nil
 }
 

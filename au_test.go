@@ -468,3 +468,58 @@ func TestFakeACNFallback(t *testing.T) {
 		t.Error("fallback ACN is not valid")
 	}
 }
+
+func TestFakeHPIIExport(t *testing.T) {
+	v := FakeHPII()
+	if len(v) != 16 {
+		t.Errorf("FakeHPII() length = %d, want 16", len(v))
+	}
+	if !strings.HasPrefix(v, "800361") {
+		t.Errorf("FakeHPII() prefix = %q, want 800361", v)
+	}
+	if !isValidLuhn(v) {
+		t.Errorf("FakeHPII() = %q failed Luhn", v)
+	}
+}
+
+func TestFakeHPIOExport(t *testing.T) {
+	v := FakeHPIO()
+	if len(v) != 16 {
+		t.Errorf("FakeHPIO() length = %d, want 16", len(v))
+	}
+	if !strings.HasPrefix(v, "800362") {
+		t.Errorf("FakeHPIO() prefix = %q, want 800362", v)
+	}
+	if !isValidLuhn(v) {
+		t.Errorf("FakeHPIO() = %q failed Luhn", v)
+	}
+}
+
+func TestFakeABNExport(t *testing.T) {
+	v := FakeABN()
+	if len(v) != 11 || !isMod89Valid(v, abnWeights, true) {
+		t.Errorf("FakeABN() = %q is not a valid ABN", v)
+	}
+}
+
+func TestFakeACNExport(t *testing.T) {
+	v := FakeACN()
+	if len(v) != 9 || !isMod89Valid(v, acnWeights, false) {
+		t.Errorf("FakeACN() = %q is not a valid ACN", v)
+	}
+}
+
+func TestFakeAHPRAExport(t *testing.T) {
+	v := FakeAHPRA()
+	if len(v) != 13 {
+		t.Errorf("FakeAHPRA() length = %d, want 13", len(v))
+	}
+	for i, r := range v {
+		switch {
+		case i < 3 && (r < 'A' || r > 'Z'):
+			t.Errorf("FakeAHPRA()=%q: char %d must be uppercase letter", v, i)
+		case i >= 3 && (r < '0' || r > '9'):
+			t.Errorf("FakeAHPRA()=%q: char %d must be digit", v, i)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package fhirgen
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 )
@@ -130,6 +131,65 @@ func (g *Generator) fakeHPIO() string {
 	suffix := fmt.Sprintf("%09d", g.rng.Intn(1000000000))
 	g.mu.Unlock()
 	return luhnCheckDigit("800362" + suffix)
+}
+
+// FakeHPII returns a valid 16-digit Australian Healthcare Provider
+// Identifier - Individual (HPI-I): prefix 800361, Luhn check digit.
+func FakeHPII() string { return luhnCheckDigit("800361" + standaloneRandomDigits(9)) }
+
+// FakeHPIO returns a valid 16-digit Australian Healthcare Provider
+// Identifier - Organisation (HPI-O): prefix 800362, Luhn check digit.
+func FakeHPIO() string { return luhnCheckDigit("800362" + standaloneRandomDigits(9)) }
+
+// FakeABN returns a valid 11-digit Australian Business Number (mod-89).
+func FakeABN() string {
+	for i := 0; i < 100000; i++ {
+		base := 1000000000 + (standaloneRand.Intn(9000000000)+i)%9000000000
+		prefix := fmt.Sprintf("%010d", base)
+		if full, ok := mod89CheckDigit(prefix, abnWeights, true); ok {
+			return full
+		}
+	}
+	return "51824753556"
+}
+
+// FakeACN returns a valid 9-digit Australian Company Number (mod-89).
+func FakeACN() string {
+	for i := 0; i < 100000; i++ {
+		base := 10000000 + (standaloneRand.Intn(90000000)+i)%90000000
+		prefix := fmt.Sprintf("%08d", base)
+		if full, ok := mod89CheckDigit(prefix, acnWeights, false); ok {
+			return full
+		}
+	}
+	return "123456783"
+}
+
+// FakeAHPRA returns a syntactically valid Ahpra registration number: three
+// uppercase letters followed by ten digits.
+func FakeAHPRA() string { return "MED" + standaloneRandomDigits(10) }
+
+// randomDigits returns n random decimal digits using the process-wide RNG.
+func randomDigits(n int) string {
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		sb.WriteByte(byte('0' + rand.Intn(10)))
+	}
+	return sb.String()
+}
+
+// standaloneRand is a fixed-seed RNG backing the exported Fake* constructors so
+// callers (e.g. momus) that generate reproducible corpora get deterministic,
+// varied AU identifiers without tying them to a Generator's seeded RNG.
+var standaloneRand = rand.New(rand.NewSource(0xF1A7))
+
+// standaloneRandomDigits returns n random decimal digits from standaloneRand.
+func standaloneRandomDigits(n int) string {
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		sb.WriteByte(byte('0' + standaloneRand.Intn(10)))
+	}
+	return sb.String()
 }
 
 func (g *Generator) fakeAHPRA() string {
