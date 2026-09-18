@@ -683,6 +683,12 @@ func mergeSlicePattern(value map[string]any, key string, sub map[string]any) {
 
 // shouldFill reports whether an element should be generated.
 func (g *Generator) shouldFill(elem *fhir.ElementDefinition) bool {
+	// An element with Max 0 can never be present (e.g. the value[x] of a complex
+	// extension like au-receivingfacility). A contract signal or a Min>0 must not
+	// override this: emitting it produces "max allowed = 0, but found 1".
+	if elem.Max == 0 {
+		return false
+	}
 	if elem.Min > 0 {
 		return true
 	}
