@@ -478,7 +478,7 @@ func TestFakePeriodOrdered(t *testing.T) {
 
 // TestFakeUseIsNeverHome verifies generated ContactPoint/Address/synthesized
 // "use" values are never 'home', so Organization telecom/address satisfy
-// org-3/org-2.
+// org-3/org-2 — even when a binding resolver would return 'home'.
 func TestFakeUseIsNeverHome(t *testing.T) {
 	reg := loadTestRegistry(t)
 	g := New(reg, WithSeed(42), WithFullFillMode())
@@ -499,6 +499,22 @@ func TestFakeUseIsNeverHome(t *testing.T) {
 	if _, c, ok := knownBinding("http://hl7.org/fhir/ValueSet/address-use"); !ok || c == "home" {
 		t.Fatalf("knownBinding(address-use) = %q, ok=%v; want non-home", c, ok)
 	}
+
+	// A binding resolver that returns 'home' for a use element is coerced to
+	// 'work' so a generated Organization telecom/address stays conformant.
+	elem := &fhir.ElementDefinition{Path: "R.telecom.use", Binding: &fhir.Binding{ValueSet: "http://hl7.org/fhir/ValueSet/contact-point-use"}}
+	tree := &fhir.ElementTree{Root: &fhir.ElementDefinition{Path: "R", Min: 1, Max: 1}, ByPath: map[string][]*fhir.ElementDefinition{}, ByID: map[string]*fhir.ElementDefinition{}}
+	g2 := New(reg, WithSeed(1), WithBindingResolver(&homeResolver{}))
+	if got := g2.fakeStringFor(elem, tree); got == "home" {
+		t.Fatal("fakeStringFor(use) must not return home even when resolver does")
+	}
+}
+
+// homeResolver is a BindingResolver that always returns a 'home' use coding.
+type homeResolver struct{}
+
+func (homeResolver) ResolveBinding(*fhir.ElementDefinition, *fhir.ElementTree) (ResolvedCoding, bool) {
+	return ResolvedCoding{System: "http://hl7.org/fhir/contact-point-use", Code: "home"}, true
 }
 
 // TestFillSlicesRespectsParentMax verifies that a sliced element whose own Max

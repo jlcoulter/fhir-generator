@@ -70,8 +70,17 @@ func (g *Generator) fakeStringFor(elem *fhir.ElementDefinition, tree *fhir.Eleme
 	lower := strings.ToLower(seg)
 
 	// A configured BindingResolver takes precedence for any element with a
-	// value set binding, so callers can override even well-known codes.
-	if elem.Binding != nil && elem.Binding.ValueSet != "" && g.bindingResolver != nil {
+	// value set binding, so callers can override even well-known codes. Never
+	// emit 'home' for a `use` element though: it is forbidden on Organization
+	// telecom/address (org-3/org-2), and 'work' is universally valid, so coerce
+	// any resolver/bound 'home' to 'work'.
+	if lower == "use" {
+		if g.bindingResolver != nil {
+			if rc, ok := g.bindingResolver.ResolveBinding(elem, tree); ok && rc.Code != "home" {
+				return rc.Code
+			}
+		}
+	} else if elem.Binding != nil && elem.Binding.ValueSet != "" && g.bindingResolver != nil {
 		if rc, ok := g.bindingResolver.ResolveBinding(elem, tree); ok {
 			return rc.Code
 		}
