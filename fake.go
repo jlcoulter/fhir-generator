@@ -346,12 +346,16 @@ func (g *Generator) fakeCodeableConcept(elem *fhir.ElementDefinition, tree *fhir
 // For unknown bindings it falls back to the binding's ValueSet URL as the
 // system and a synthesized code.
 func (g *Generator) fakeBoundCode(elem *fhir.ElementDefinition, tree *fhir.ElementTree) (string, string, string) {
-	if elem.Binding != nil && elem.Binding.ValueSet != "" {
-		if g.bindingResolver != nil {
-			if rc, ok := g.bindingResolver.ResolveBinding(elem, tree); ok {
-				return rc.System, rc.Code, rc.Display
-			}
+	// Consult the BindingResolver even when the element has no binding of its
+	// own: a coded element's binding may live on its "coding" child (common for
+	// nested extension value[x].coding), which the resolver can resolve from the
+	// element's children. Only when resolution fails do we fall back.
+	if g.bindingResolver != nil {
+		if rc, ok := g.bindingResolver.ResolveBinding(elem, tree); ok {
+			return rc.System, rc.Code, rc.Display
 		}
+	}
+	if elem.Binding != nil && elem.Binding.ValueSet != "" {
 		if sys, code, ok := knownBinding(elem.Binding.ValueSet); ok {
 			return sys, code, ""
 		}
