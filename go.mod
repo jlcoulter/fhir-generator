@@ -3,4 +3,4 @@ module github.com/jlcoulter/fhir-generator
 go 1.27.0
 
 
-require github.com/jlcoulter/fhir-registry v0.1.2
+require github.com/jlcoulter/fhir-registry v0.2.0
