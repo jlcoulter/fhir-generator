@@ -169,6 +169,90 @@ func FakeACN() string {
 // uppercase letters followed by ten digits.
 func FakeAHPRA() string { return "MED" + standaloneRandomDigits(10) }
 
+// deterministicDigits returns n decimal digits derived from a hash of the seed
+// string, so the same seed always yields the same digits regardless of call
+// order (unlike the process-wide standaloneRand used by the unseeded Fake*
+// constructors).
+func deterministicDigits(seed string, n int) string {
+	h := fnv32(seed)
+	r := rand.New(rand.NewSource(int64(h)))
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		sb.WriteByte(byte('0' + r.Intn(10)))
+	}
+	return sb.String()
+}
+
+func fnv32(s string) uint32 {
+	const (
+		offset = 2166136261
+		prime  = 16777619
+	)
+	h := uint32(offset)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= prime
+	}
+	return h
+}
+
+// FakeHPIIFromSeed returns a valid 16-digit HPI-I deterministically derived from
+// seed, so callers generating reproducible corpora get the same value for the
+// same seed regardless of generation order.
+func FakeHPIIFromSeed(seed string) string { return luhnCheckDigit("800361" + deterministicDigits(seed+"|hpii", 9)) }
+
+// FakeHPIOFromSeed returns a valid 16-digit HPI-O deterministically derived
+// from seed.
+func FakeHPIOFromSeed(seed string) string { return luhnCheckDigit("800362" + deterministicDigits(seed+"|hpio", 9)) }
+
+// FakeAHPRAFromSeed returns a valid Ahpra registration number deterministically
+// derived from seed.
+func FakeAHPRAFromSeed(seed string) string { return "MED" + deterministicDigits(seed+"|ahpra", 10) }
+
+// FakeABNFromSeed returns a valid 11-digit ABN deterministically derived from
+// seed.
+func FakeABNFromSeed(seed string) string {
+	base := 1000000000 + int64(fnv32(seed+"|abn"))%9000000000
+	for i := int64(0); i < 100000; i++ {
+		prefix := fmt.Sprintf("%010d", base+i)
+		if full, ok := mod89CheckDigit(prefix, abnWeights, true); ok {
+			return full
+		}
+	}
+	return "51824753556"
+}
+
+// FakeACNFromSeed returns a valid 9-digit ACN deterministically derived from
+// seed.
+func FakeACNFromSeed(seed string) string {
+	base := 10000000 + int64(fnv32(seed+"|acn"))%90000000
+	for i := int64(0); i < 100000; i++ {
+		prefix := fmt.Sprintf("%08d", base+i)
+		if full, ok := mod89CheckDigit(prefix, acnWeights, false); ok {
+			return full
+		}
+	}
+	return "123456783"
+}
+
+// FakeHPIIFromSeedOrValue returns a deterministic identifier value for a system
+// URL, derived from seed, or "" when the system is not a supported AU system.
+func FakeHPIIFromSeedOrValue(system, seed string) string {
+	switch strings.TrimSpace(system) {
+	case SystemHPIO:
+		return FakeHPIOFromSeed(seed)
+	case SystemHPII:
+		return FakeHPIIFromSeed(seed)
+	case SystemABN:
+		return FakeABNFromSeed(seed)
+	case SystemACN:
+		return FakeACNFromSeed(seed)
+	case SystemAHPRA:
+		return FakeAHPRAFromSeed(seed)
+	}
+	return ""
+}
+
 // randomDigits returns n random decimal digits using the process-wide RNG.
 func randomDigits(n int) string {
 	var sb strings.Builder
@@ -204,18 +288,18 @@ func (g *Generator) normaliseIdentifiers(v any) {
 	case map[string]any:
 		if sys, ok := typed["system"].(string); ok {
 			if _, ok := typed["value"]; ok {
-				switch strings.TrimSpace(sys) {
-				case SystemHPIO:
-					typed["value"] = g.fakeHPIO()
-				case SystemHPII:
-					typed["value"] = g.fakeHPII()
-				case SystemABN:
-					typed["value"] = g.fakeABN()
-				case SystemACN:
-					typed["value"] = g.fakeACN()
-				case SystemAHPRA:
-					typed["value"] = g.fakeAHPRA()
+				// Derive the identifier value deterministically from the system
+				// (plus the generator's seed), never from the advancing g.rng:
+				// normaliseIdentifiers iterates a Go map in nondeterministic
+				// order, so consuming g.rng in map order would assign a
+				// different value to the same identifier across runs. The RNG
+				// draw is still consumed so the generator's downstream stream
+				// position is unchanged for callers that reuse one generator
+				// across resources.
+				if v2 := g.seededIdentifierValue(sys); v2 != "" {
+					typed["value"] = v2
 				}
+				g.rng.Intn(10000000000)
 			}
 		}
 		for _, child := range typed {
@@ -226,4 +310,24 @@ func (g *Generator) normaliseIdentifiers(v any) {
 			g.normaliseIdentifiers(child)
 		}
 	}
+}
+
+// seededIdentifierValue returns a valid, deterministic AU identifier value for
+// system, keyed by the generator's seed so different resources still vary but
+// the same identifier is reproducible regardless of generation order.
+func (g *Generator) seededIdentifierValue(system string) string {
+	seed := fmt.Sprintf("%d|%s", g.seed, system)
+	switch strings.TrimSpace(system) {
+	case SystemHPIO:
+		return FakeHPIOFromSeed(seed)
+	case SystemHPII:
+		return FakeHPIIFromSeed(seed)
+	case SystemABN:
+		return FakeABNFromSeed(seed)
+	case SystemACN:
+		return FakeACNFromSeed(seed)
+	case SystemAHPRA:
+		return FakeAHPRAFromSeed(seed)
+	}
+	return ""
 }
