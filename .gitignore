@@ -1,0 +1,4 @@
+*.tgz
+fhir-generator
+coverage.out
+.serena/
