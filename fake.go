@@ -257,12 +257,14 @@ func synthesizeCode(seg string) (string, bool) {
 }
 
 func (g *Generator) fakeReference(elem *fhir.ElementDefinition) map[string]any {
-	// Derive the resource type from the target profile URL (last path
-	// segment, version stripped), producing a realistic "ResourceType/id".
+	// Resolve the target profile to its base FHIR resource type, producing a
+	// realistic "ResourceType/id". The base type (e.g. Practitioner) is required:
+	// a reference typed with a profile id (e.g. au-pd-practitioner) is not a valid
+	// resource type and servers reject it.
 	resourceType := "Organization"
 	if len(elem.Types) > 0 && len(elem.Types[0].TargetProfile) > 0 {
-		rt := resourceTypeFromURL(elem.Types[0].TargetProfile[0])
-		if rt != "Resource" && rt != "DomainResource" {
+		rt := g.referenceTargetResourceType(elem.Types[0].TargetProfile[0])
+		if rt != "" && rt != "Resource" && rt != "DomainResource" {
 			resourceType = rt
 		}
 	}
@@ -271,12 +273,35 @@ func (g *Generator) fakeReference(elem *fhir.ElementDefinition) map[string]any {
 	}
 }
 
+// referenceTargetResourceType resolves a Reference target profile canonical URL
+// to its base FHIR resource type. It looks the profile up in the registry
+// (version stripped) and returns its base type; only when the profile is not
+// indexed does it fall back to the URL's last path segment, which is correct for
+// canonical URLs that are themselves a base resource type (e.g. ".../Patient").
+func (g *Generator) referenceTargetResourceType(target string) string {
+	url := stripVersionSuffix(target)
+	if g.reg != nil {
+		if sd, ok := g.reg.Definition(url); ok && sd != nil {
+			if t := strings.TrimSpace(sd.Type); t != "" {
+				return t
+			}
+		}
+	}
+	return resourceTypeFromURL(url)
+}
+
+// stripVersionSuffix removes a trailing "|version" from a canonical URL.
+func stripVersionSuffix(url string) string {
+	if i := strings.LastIndex(url, "|"); i >= 0 {
+		return url[:i]
+	}
+	return url
+}
+
 // resourceTypeFromURL extracts the resource type name from a canonical
 // StructureDefinition URL, stripping any "|version" suffix.
 func resourceTypeFromURL(url string) string {
-	if i := strings.LastIndex(url, "|"); i >= 0 {
-		url = url[:i]
-	}
+	url = stripVersionSuffix(url)
 	if i := strings.LastIndex(url, "/"); i >= 0 {
 		return url[i+1:]
 	}
